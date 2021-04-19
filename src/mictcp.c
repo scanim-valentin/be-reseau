@@ -4,20 +4,24 @@
 /* le temps */
 #include <sys/time.h>
 
-#define TAILLE_BUFFER 500
-#define TIME_OUT 50
-#define SEUIL 1
+#define LOSS_RATE 0 //Loss rate used in set_loss_rate
+#define TAILLE_BUFFER 500 //Size of the message buffer
+#define TIME_OUT 50 //Time out for IP_recv
+
+#define SEUIL_NB_PERTES 5 //Seuil de tolérance de nombre de perte (on doi avoir Losses < SEUIL_NB_PERTES)
+
+#define SEUIL_TEMPOREL 500000 // (microseconde) Seuil de tolérance de l'écart de temps entre 2 pertes (on doit avoir delta > SEUIL_TEMPOREL)
 
  //Variable globale
 int PE = 0; //Token Envoi
 int PA = 0; //Token Reception
 
-//Gestion du seuil de tolérance des pertes par un fenêtrage glissant
+//Gestion du seuil de tolérance des pertes
 int Losses = 0;
 int sock_id = 0;
+unsigned long tf, td;
 struct timeval* restrict tp;
-unsigned long tf; 
-unsigned long td = 0;
+
 
 struct mic_tcp_sock tab_sock[TAILLE_BUFFER];
 /*
@@ -26,13 +30,14 @@ struct mic_tcp_sock tab_sock[TAILLE_BUFFER];
  */
 int mic_tcp_socket(start_mode sm)
 { 
-    printf("truc a la con\n");
+   printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
+   tp = (struct timeval*)malloc(sizeof(struct timeval));
+   gettimeofday(tp,NULL);
    int result = -1;
    tab_sock[sock_id].fd = sock_id;
    sock_id++;
-   printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
    result = initialize_components(sm); /* Appel obligatoire */
-   set_loss_rate(30);
+   set_loss_rate(LOSS_RATE);
    
    return result;
 }
@@ -56,7 +61,8 @@ int mic_tcp_bind(int socket, mic_tcp_sock_addr addr)
 int mic_tcp_accept(int socket, mic_tcp_sock_addr* addr)
 {
     printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
-    return -1;
+
+    return 0;
 }
 
 /*
@@ -66,7 +72,7 @@ int mic_tcp_accept(int socket, mic_tcp_sock_addr* addr)
 int mic_tcp_connect(int socket, mic_tcp_sock_addr addr)
 {
     printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
-    return -1;
+    return 0;
 }
 
 /*
@@ -98,25 +104,45 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
         printf("Erreur IP_Send\n");
     }
     mic_tcp_pdu ack;
+    int i = 0;
+    printf("L0\n");
      while(1){
+        printf("i = %d\n",i);
+        printf("L1\n");
         if(IP_recv(&ack, &addr, TIME_OUT)>=0){
+            printf("L2\n");
             if(ack.header.ack_num == (PE+1)%2) {
+                printf("L3\n");
                 PE = (PE+1)%2;
             } 
+        printf("L4\n");
         } else {
+            printf("L5\n");
             printf("perte ack_num=%d\n",ack.header.ack_num);
             Losses++;
-            gettimeofday(tp,NULL);
+            if(gettimeofday(tp,NULL)){
+                printf("Echec getitmeofday\n");
+            }
+            printf("L6.0.0\n");
+            printf("usec = %lu\n",tp->tv_usec);
+            printf("L6.0.1\n");
             tf = tp->tv_usec;
+            printf("L6.1\n");
             printf("Losses : %d\n",Losses);
-            if(Losses > SEUIL){
-                if(tf - td < 1000000){
+            printf("L6.2\n");
+            if(Losses > SEUIL_NB_PERTES){
+                printf("L7\n");
+                printf("/_\\ = %lu\n",tf - td);
+                if(tf - td < SEUIL_TEMPOREL){
+                    printf("L8\n");
                     Losses = 0;
                     if(-1 == (size = IP_send(pdu, addr)) ){ //On renvoie le PDU
+                        printf("L9\n");
                         printf("Erreur IP_Send\n");
                     }
                 }
                 else{
+                    printf("L10\n");
                     td = tf;
                     Losses = 0;
                     
@@ -124,6 +150,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
             }
         }
      }
+    printf("L11\n");
     return size;
 }
 
@@ -155,6 +182,7 @@ int mic_tcp_close (int socket)
     printf("[MIC-TCP] Appel de la fonction :  "); printf(__FUNCTION__); printf("\n");
     int R = 0;
     if(-1 == ( R = close(socket)) );
+    free(tp);
     return R;
 }
 
@@ -166,5 +194,25 @@ int mic_tcp_close (int socket)
  */
 void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr)
 {
-    printf("[MIC-TCP] Appel de la fonction: "); printf(__FUNCTION__); printf("\n");
+     printf("[MIC-TCP] Appel de la fonction: "); printf(__FUNCTION__); printf("\n");
+
+    //PA = 0;
+
+    mic_tcp_pdu ack;
+    ack.header.ack = 1;
+    ack.payload.size = 0;
+
+    if(pdu.header.seq_num == PA) {
+
+        app_buffer_put(pdu.payload);
+        PA = (PA+1)%2; //PA = 1
+    }
+    ack.header.ack_num = PA;
+    printf("succes seq_num=%d\n",pdu.header.seq_num);
+    //printf("PA=%d\n",PA);
+    if(IP_send(ack, addr) < 0) {
+        //erreur send
+        printf("erreur send\n");
+        exit(-1);
+    }
 }
