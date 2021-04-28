@@ -1,12 +1,11 @@
 #include <mictcp.h>
 #include <api/mictcp_core.h>
 #define TAILLE_BUFFER 500 //Taille du buffer
+#define TIME_OUT 50 //Timer de réception de l'ack (IP_recv)
+#define RETRY_LIMIT 10 //Limite le nombre de nouvelles tentatives d'envoi lors de l'échec de réception d'un ack
 
-//VARIABLES GLOBALES
-int PE = 0; // Prochaine Trame à Emettre
-int PA = 0; // Prochaine Trame à Attendre
-int sock_id = 0; //Index dans tab_sock
-struct mic_tcp_sock tab_sock[TAILLE_BUFFER];
+//VARIABLE GLOBALE
+int port_dest = -1;
 
 /*
  * Permet de créer un socket entre l’application et MIC-TCP
@@ -16,8 +15,6 @@ int mic_tcp_socket(start_mode sm)
 {
    int result = -1;
    printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
-   tab_sock[sock_id].fd = sock_id;
-   sock_id++;
    result = initialize_components(sm); /* Appel obligatoire */
    set_loss_rate(0);
 
@@ -62,21 +59,18 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
 {
     printf("[MIC-TCP] Appel de la fonction: "); printf(__FUNCTION__); printf("\n");
     int size; //Taille du PDU envoyé
-
     //Construction du PDU
     mic_tcp_pdu pdu;
     mic_tcp_sock_addr addr;
-    pdu.header.seq_num = PE;
-    pdu.header.source_port = tab_sock[mic_sock].addr.port;
-    pdu.header.dest_port = tab_sock[mic_sock].addr.port;
     pdu.payload.size = mesg_size;
     pdu.payload.data = mesg;
+
 
     //Émission du PDU
     if(-1 == (size = IP_send(pdu, addr)) ){
         printf("Erreur IP_Send\n");
+        return -1;
     }
-    //(Aucun mécanisme de reprise des pertes dans cette version)
     return 0;
 }
 
@@ -116,22 +110,6 @@ int mic_tcp_close (int socket)
 void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr)
 {
     printf("[MIC-TCP] Appel de la fonction: "); printf(__FUNCTION__); printf("\n");
+    app_buffer_put(pdu.payload);
 
-    mic_tcp_pdu ack;
-    ack.header.ack = 1;
-    ack.payload.size = 0;
-
-    if(pdu.header.seq_num == PA) {
-
-        app_buffer_put(pdu.payload);
-        PA = (PA+1)%2; //PA = 1
-    }
-    ack.header.ack_num = PA;
-    printf("succes seq_num=%d\n",pdu.header.seq_num);
-    //printf("PA=%d\n",PA);
-    if(IP_send(ack, addr) < 0) {
-        //erreur send
-        printf("erreur send\n");
-        exit(-1);
-    }
 }
