@@ -74,6 +74,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     pdu.payload.data = mesg;
     mic_tcp_pdu ack; //PDU d'acquittement
     ack.header.ack_num = -1;
+    ack.header.fin = 0;
     char next_frame = 0; //Variable de sortie de la boucle
     
     //Émission du PDU
@@ -83,7 +84,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
 
     while(!next_frame){
         printf("(*) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
-        if( IP_recv(&ack, &addr, TIME_OUT) < 0 || ack.header.ack != 1 || ack.header.ack_num != (PE+1)%2 ){
+        if( IP_recv(&ack, NULL, TIME_OUT) < 0 || ack.header.ack != 1 || ack.header.ack_num != (PE+1)%2 ){
             printf("(**) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
         //Echec dans la réception de l'ack : on renvoi le PDU
             printf("Echec dans la réception de l'ack : on renvoi le PDU\n");
@@ -98,6 +99,7 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
             }
 
         }else{
+            printf("(***) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
             PE = (PE+1)%2;
             next_frame = 1;
             printf("Passage à l'attente du prochain PDU\n");
@@ -143,11 +145,12 @@ int mic_tcp_close (int socket)
 void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr)
 {
     printf("[MIC-TCP] Appel de la fonction: "); printf(__FUNCTION__); printf("\n");
-
+    printf("(*) pdu.header.seq_num = %d ; PA = %d\n",pdu.header.seq_num,PA);
     mic_tcp_pdu ack;
     ack.header.ack = 1;
     ack.payload.size = 0;
-
+    ack.header.fin = 0;
+    
     if(pdu.header.seq_num == PA) {
         app_buffer_put(pdu.payload);
         PA = (PA+1)%2;
