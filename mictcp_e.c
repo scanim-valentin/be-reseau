@@ -96,7 +96,9 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
         //printf("PE=%d\n",PE);
         recvResult = IP_recv(&ack, &addr, timeout);
         printf("recv=%d\n",recvResult);
+        printf("(1) ack.header.ack_num = %d ; PE = %d\n",ack.header.ack_num,PE);
         if(recvResult>=0){
+            printf("(2) ack.header.ack_num = %d ; PE = %d\n",ack.header.ack_num,PE);
             //if(ack.header.ack_num == PE) {
             if(ack.header.ack_num == (PE+1)%2) {
                 // stop timer et libération du buffer de DT(M)

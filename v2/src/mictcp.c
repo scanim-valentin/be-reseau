@@ -2,7 +2,9 @@
 #include <api/mictcp_core.h>
 #define TAILLE_BUFFER 500 //Taille du buffer
 #define TIME_OUT 50 //Timer de réception de l'ack (IP_recv)
-#define RETRY_LIMIT 10 //Limite le nombre de nouvelles tentatives d'envoi lors de l'échec de réception d'un ack
+#define RETRY_LIMIT 100 //Limite le nombre de nouvelles tentatives d'envoi lors de l'échec de réception d'un ack
+#define LOSS_RATE 30
+
 
 //VARIABLES GLOBALES
 int PE = 0; // Prochaine Trame à Emettre
@@ -17,7 +19,7 @@ int mic_tcp_socket(start_mode sm)
    int result = -1;
    printf("[MIC-TCP] Appel de la fonction: ");  printf(__FUNCTION__); printf("\n");
    result = initialize_components(sm); /* Appel obligatoire */
-   set_loss_rate(0);
+   set_loss_rate(LOSS_RATE);
 
    return result;
 }
@@ -66,28 +68,30 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
     mic_tcp_pdu pdu;
     mic_tcp_sock_addr addr;
     pdu.header.seq_num = PE;
-    pdu.header.source_port = 666;
-    pdu.header.dest_port = 666;
+    //pdu.header.source_port = 666;
+    //pdu.header.dest_port = 666;
     pdu.payload.size = mesg_size;
     pdu.payload.data = mesg;
     mic_tcp_pdu ack; //PDU d'acquittement
-
+    ack.header.ack_num = -1;
     char next_frame = 0; //Variable de sortie de la boucle
+    
     //Émission du PDU
     if(-1 == (size = IP_send(pdu, addr)) ){
         printf("Erreur IP_Send\n");
     }
 
     while(!next_frame){
-
-        if( IP_recv(&ack, &addr, TIME_OUT) || ack.header.ack_num != PE ){
+        printf("(*) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
+        if( IP_recv(&ack, &addr, TIME_OUT) < 0 || ack.header.ack != 1 || ack.header.ack_num != (PE+1)%2 ){
+            printf("(**) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
         //Echec dans la réception de l'ack : on renvoi le PDU
             printf("Echec dans la réception de l'ack : on renvoi le PDU\n");
-            if( (retry_nb++) > RETRY_LIMIT ){ //Dépassement de la limite de tentatives
+            if( (retry_nb++) >= RETRY_LIMIT ){ //Dépassement de la limite de tentatives
                 printf("Depassement du nombre de tentatives d'envoi autorisé (%d) pour un PDU\n",RETRY_LIMIT);
                 exit(-1);
             }
-            printf("Reemission du PDU\n");
+            printf("[retry_nb = %d / %d] - Reemission du PDU\n",retry_nb,RETRY_LIMIT);
             if(-1 == (size = IP_send(pdu, addr)) ){
                 printf("Erreur IP_Send\n");
                 exit(-1);
@@ -153,7 +157,7 @@ void process_received_PDU(mic_tcp_pdu pdu, mic_tcp_sock_addr addr)
 
     printf("succes seq_num=%d\n",pdu.header.seq_num);
 
-    printf("PA=%d\n",PA);
+    //printf("PA=%d\n",PA);
     printf("Emission du PDU ack\n");
     if(IP_send(ack, addr) < 0) {
         //erreur send
