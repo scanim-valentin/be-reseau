@@ -108,19 +108,25 @@ int mic_tcp_send (int mic_sock, char* mesg, int mesg_size)
             printf("(**) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
         //Echec dans la réception de l'ack : on renvoi le PDU
             printf("Echec dans la réception de l'ack\n");
+            if( (retry_nb++) >= RETRY_LIMIT ){ //Dépassement de la limite de tentatives
+                    printf("Depassement du nombre de tentatives d'envoi autorisé (%d) pour un PDU\n",RETRY_LIMIT);
+                    exit(-1);
+            }
 
+            printf("[retry_nb = %d / %d] - Reemission du PDU\n",retry_nb,RETRY_LIMIT);
             fenetre[index_fenetre] = 1;
             if(!taux_perte_ok()){ //Avant de renvoyer, on vérifie que le taux de perte dépasse la tolérance
                 printf("Taux de perte superieur au seuil\n");
-                if( (retry_nb++) >= RETRY_LIMIT ){ //Dépassement de la limite de tentatives
-                    printf("Depassement du nombre de tentatives d'envoi autorisé (%d) pour un PDU\n",RETRY_LIMIT);
-                    exit(-1);
-                }
-                printf("[retry_nb = %d / %d] - Reemission du PDU\n",retry_nb,RETRY_LIMIT);
+
                 if(-1 == (size = IP_send(pdu, addr)) ){
                     printf("Erreur IP_Send\n");
                     exit(-1);
                 }
+            }else{
+                printf("(***) ack.header.ack_num = %d ;  ack.header.ack  = %d;  PE = %d\n",ack.header.ack_num, ack.header.ack,PE);
+                PE = (PE+1)%2;
+                next_frame = 1;
+                printf("Passage à l'attente du prochain PDU\n");
             }
             print_fenetre();
         }else{
